@@ -391,7 +391,7 @@ def render_interface() -> gr.Blocks:
         output_audio = gr.Audio(
             label="Generated Podcast",
             interactive=False,
-            streaming=True,
+            streaming=False,  # Disabled - requires FFmpeg for ADTS conversion
         )
 
         # Wire up the streaming generate button
