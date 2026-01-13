@@ -8,6 +8,7 @@ A simplified fork of [SoulX-Podcast](https://github.com/Soul-AILab/SoulX-Podcast
 - **Pre-configured voices** - S1 = Alice (female), S2 = Frank (male)
 - **Simplified WebUI** - Single-page interface, just paste script and generate
 - **Simplified API** - Plain text input, no file uploads needed
+- **Production Worker** - Pull-based worker for TubeOnAI integration with multi-GPU support
 
 ## Quick Start
 
@@ -114,6 +115,113 @@ curl "http://localhost:8000/download/{task_id}.wav" -o podcast.wav
 | `/task/{task_id}` | GET | Check task status |
 | `/download/{filename}` | GET | Download generated audio |
 | `/health` | GET | Health check |
+
+## Production Worker (TubeOnAI Integration)
+
+The worker is a pull-based service that polls TubeOnAI for podcast generation jobs. It supports multiple GPU servers for horizontal scaling.
+
+### Architecture
+
+```
+TubeOnAI Backend                    GPU Workers
+┌─────────────┐                ┌─────────────────┐
+│  Job Queue  │◄───── poll ────│  GPU Server 1   │
+│  (Database) │                └────────┬────────┘
+│             │                         │
+│             │                ┌────────▼────────┐
+│             │                │       S3        │
+│             │                │    (Storage)    │
+│             │                └─────────────────┘
+└─────────────┘
+```
+
+### Quick Setup (New GPU Server)
+
+```bash
+# One-command setup
+curl -fsSL https://raw.githubusercontent.com/mehdi89/SoulX-Podcast/main/setup_worker.sh | bash
+
+# Configure
+cd SoulX-Podcast
+nano worker/.env  # Add your credentials
+
+# Run
+conda activate soulxpodcast
+python run_worker.py
+```
+
+### Manual Setup
+
+```bash
+# Clone and setup
+git clone https://github.com/mehdi89/SoulX-Podcast.git
+cd SoulX-Podcast
+conda create -n soulxpodcast -y python=3.11
+conda activate soulxpodcast
+pip install -r requirements.txt
+
+# Download model
+huggingface-cli download Soul-AILab/SoulX-Podcast-1.7B \
+  --local-dir pretrained_models/SoulX-Podcast-1.7B
+
+# Configure worker
+cp worker/.env.example worker/.env
+nano worker/.env  # Edit with your credentials
+
+# Run worker
+python run_worker.py
+```
+
+### Configuration
+
+Edit `worker/.env`:
+
+```bash
+# Worker identity (unique per server)
+WORKER_ID=gpu-server-1
+SERVER_NAME=Azure ML East US
+
+# TubeOnAI API
+TUBEONAI_API_URL=https://api.tubeonai.com/podcast-worker/v1
+TUBEONAI_API_TOKEN=your-token-here
+
+# S3 Storage
+S3_BUCKET=your-bucket
+S3_ACCESS_KEY=your-key
+S3_SECRET_KEY=your-secret
+S3_REGION=us-east-1
+
+# Settings
+POLL_INTERVAL=10      # Seconds between job polls
+HEARTBEAT_INTERVAL=60 # Seconds between heartbeats
+```
+
+### Run as System Service
+
+```bash
+# Install service
+sudo cp worker/podcast-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable podcast-worker
+sudo systemctl start podcast-worker
+
+# Check status
+sudo systemctl status podcast-worker
+sudo journalctl -u podcast-worker -f  # View logs
+```
+
+### Worker API (for TubeOnAI Backend)
+
+The worker expects these endpoints from TubeOnAI:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/jobs/claim` | POST | Claim a pending job |
+| `/jobs/{id}/complete` | POST | Mark job complete with S3 URL |
+| `/jobs/{id}/failed` | POST | Mark job as failed |
+| `/workers/heartbeat` | POST | Send health status |
+
+See [Integration Design Doc](docs/plans/2026-01-13-tubeonai-integration-design.md) for full API specs.
 
 ## Original Project
 
