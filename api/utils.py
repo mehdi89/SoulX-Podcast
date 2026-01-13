@@ -17,31 +17,31 @@ logger = logging.getLogger(__name__)
 
 
 def generate_task_id() -> str:
-    """生成唯一的任务ID"""
+    """Generate a unique task ID"""
     return str(uuid.uuid4())
 
 
 def save_upload_file(upload_file: UploadFile, task_id: str, index: int) -> Path:
     """
-    保存上传的文件到临时目录
+    Save uploaded file to temporary directory
 
     Args:
-        upload_file: FastAPI上传文件对象
-        task_id: 任务ID
-        index: 文件索引
+        upload_file: FastAPI upload file object
+        task_id: Task ID
+        index: File index
 
     Returns:
-        Path: 保存的文件路径
+        Path: Saved file path
     """
     try:
-        # 获取文件扩展名
+        # Get file extension
         file_extension = Path(upload_file.filename).suffix or ".wav"
 
-        # 构建保存路径
+        # Build save path
         filename = f"{task_id}_prompt_{index}{file_extension}"
         file_path = config.temp_dir / filename
 
-        # 保存文件
+        # Save file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(upload_file.file, buffer)
 
@@ -50,96 +50,96 @@ def save_upload_file(upload_file: UploadFile, task_id: str, index: int) -> Path:
 
     except Exception as e:
         logger.error(f"Failed to save upload file: {e}")
-        raise HTTPException(status_code=500, detail=f"文件保存失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"File save failed: {str(e)}")
     finally:
         upload_file.file.close()
 
 
 def validate_audio_files(files: List[UploadFile]) -> None:
     """
-    验证音频文件
+    Validate audio files
 
     Args:
-        files: 上传的文件列表
+        files: List of uploaded files
 
     Raises:
-        HTTPException: 如果验证失败
+        HTTPException: If validation fails
     """
     if not files or len(files) == 0:
-        raise HTTPException(status_code=400, detail="至少需要上传1个参考音频文件")
+        raise HTTPException(status_code=400, detail="At least 1 reference audio file is required")
 
     if len(files) > 4:
-        raise HTTPException(status_code=400, detail="最多支持4个说话人（4个音频文件）")
+        raise HTTPException(status_code=400, detail="Maximum 4 speakers (4 audio files) supported")
 
-    # 验证文件类型和大小
+    # Validate file type and size
     allowed_extensions = {".wav", ".mp3", ".flac", ".m4a"}
     for i, file in enumerate(files):
-        # 检查文件扩展名
+        # Check file extension
         file_ext = Path(file.filename).suffix.lower()
         if file_ext not in allowed_extensions:
             raise HTTPException(
                 status_code=400,
-                detail=f"文件 {file.filename} 格式不支持。支持的格式: {', '.join(allowed_extensions)}"
+                detail=f"File {file.filename} format not supported. Supported formats: {', '.join(allowed_extensions)}"
             )
 
-        # 检查文件大小（通过content-length header，可能不准确）
+        # Check file size (via content-length header, may be inaccurate)
         if hasattr(file, 'size') and file.size and file.size > config.max_upload_size:
             raise HTTPException(
                 status_code=400,
-                detail=f"文件 {file.filename} 超过最大大小限制 ({config.max_upload_size / 1024 / 1024}MB)"
+                detail=f"File {file.filename} exceeds max size limit ({config.max_upload_size / 1024 / 1024}MB)"
             )
 
 
 def validate_dialogue_format(dialogue_text: str, num_speakers: int) -> Tuple[bool, str]:
     """
-    验证对话文本格式
+    Validate dialogue text format
 
     Args:
-        dialogue_text: 对话文本
-        num_speakers: 说话人数量
+        dialogue_text: Dialogue text
+        num_speakers: Number of speakers
 
     Returns:
-        Tuple[bool, str]: (是否有效, 错误信息)
+        Tuple[bool, str]: (is_valid, error_message)
     """
     dialogue_text = dialogue_text.strip()
 
-    # 单说话人模式：不需要特殊格式
+    # Single speaker mode: no special format required
     if num_speakers == 1:
         if len(dialogue_text) == 0:
-            return False, "对话文本不能为空"
-        # 单说话人可以不使用[S1]标记
+            return False, "Dialogue text cannot be empty"
+        # Single speaker can omit [S1] tag
         return True, ""
 
-    # 多说话人模式：需要[S1][S2]等标记
-    # 提取所有说话人标记
+    # Multi-speaker mode: requires [S1][S2] etc. tags
+    # Extract all speaker tags
     speaker_pattern = r'\[S[1-4]\]'
     matches = re.findall(speaker_pattern, dialogue_text)
 
     if not matches:
-        return False, f"多说话人模式需要使用说话人标记，如: [S1]你好[S2]你好"
+        return False, f"Multi-speaker mode requires speaker tags, e.g.: [S1]Hello[S2]Hi there"
 
-    # 检查使用的说话人ID是否在有效范围内
+    # Check if used speaker IDs are within valid range
     used_speakers = set()
     for match in matches:
-        speaker_id = int(match[2])  # 提取[S1]中的1
+        speaker_id = int(match[2])  # Extract 1 from [S1]
         used_speakers.add(speaker_id)
 
         if speaker_id > num_speakers:
-            return False, f"文本中使用了说话人[S{speaker_id}]，但只提供了{num_speakers}个参考音频"
+            return False, f"Text uses speaker [S{speaker_id}], but only {num_speakers} reference audio(s) provided"
 
     return True, ""
 
 
 def cleanup_old_files(directory: Path, minutes: int = 30) -> int:
     """
-    清理过期的文件
+    Clean up expired files
 
     Args:
-        directory: 要清理的目录
-        minutes: 文件保留时间（分钟）
+        directory: Directory to clean
+        minutes: File retention time (minutes)
 
     Returns:
-        int: 清理的文件数量
+        int: Number of files cleaned
     """
     if not directory.exists():
         return 0
@@ -150,7 +150,7 @@ def cleanup_old_files(directory: Path, minutes: int = 30) -> int:
     try:
         for file_path in directory.glob("*"):
             if file_path.is_file():
-                # 获取文件修改时间
+                # Get file modification time
                 file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
 
                 if file_mtime < cutoff_time:
@@ -168,7 +168,7 @@ def cleanup_old_files(directory: Path, minutes: int = 30) -> int:
 
 
 def format_audio_duration(seconds: float) -> str:
-    """格式化音频时长"""
+    """Format audio duration"""
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f"{minutes:02d}:{secs:02d}"
@@ -176,27 +176,27 @@ def format_audio_duration(seconds: float) -> str:
 
 def parse_dialogue_text(dialogue_text: str, num_speakers: int) -> List[str]:
     """
-    解析对话文本为列表格式
+    Parse dialogue text into list format
 
     Args:
-        dialogue_text: 原始对话文本
-        num_speakers: 说话人数量
+        dialogue_text: Raw dialogue text
+        num_speakers: Number of speakers
 
     Returns:
-        List[str]: 分段的对话列表，每段包含说话人标记
+        List[str]: Segmented dialogue list, each segment includes speaker tag
     """
-    # 单说话人：直接添加[S1]标记
+    # Single speaker: add [S1] tag directly
     if num_speakers == 1:
         if not dialogue_text.startswith("[S1]"):
             return [f"[S1]{dialogue_text}"]
         else:
             return [dialogue_text]
 
-    # 多说话人：按[S1][S2]分割
+    # Multi-speaker: split by [S1][S2]
     pattern = r'(\[S[1-4]\][^\[\]]*)'
     segments = re.findall(pattern, dialogue_text)
 
-    # 过滤空段落
+    # Filter empty segments
     segments = [seg.strip() for seg in segments if seg.strip()]
 
     return segments

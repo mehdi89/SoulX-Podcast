@@ -1,129 +1,134 @@
-# SoulX-Podcast Setup and Testing Guide
+# SoulX-Podcast Setup and Usage Guide
 
-## Setup Summary
+## Overview
 
-The SoulX-Podcast-1.7B model has been successfully installed and tested on this system.
+SoulX-Podcast is a podcast generation system that converts text scripts to natural-sounding audio with multiple speakers.
 
-### Installation Details
+**Pre-configured voices:**
+- **S1** = Alice (female host)
+- **S2** = Frank (male guest)
 
-- **Location**: `/home/azureuser/tubeonai/SoulX-Podcast`
-- **Conda Environment**: `soulxpodcast` (Python 3.11)
-- **Model**: `Soul-AILab/SoulX-Podcast-1.7B`
-- **Model Path**: `pretrained_models/SoulX-Podcast-1.7B`
+## Quick Start
 
-## Usage
-
-### Method 1: Using the Convenience Script
-
-A bash script has been created to simplify podcast generation:
+### Running the WebUI
 
 ```bash
-./generate_podcast.sh --script <path_to_json> --output <output_wav> [--seed <number>]
+python webui.py --model_path pretrained_models/SoulX-Podcast-1.7B
+# Opens at http://0.0.0.0:7860
 ```
 
-**Examples:**
-```bash
-# Generate English podcast
-./generate_podcast.sh --script example/podcast_script/script_english.json --output outputs/my_english_podcast.wav
+The WebUI provides a simple interface:
+1. Paste your podcast script using `[S1]` and `[S2]` speaker tags
+2. Click "Generate Podcast Audio"
+3. Listen to or download the result
 
-# Generate Mandarin podcast with specific seed
-./generate_podcast.sh --script example/podcast_script/script_mandarin.json --output outputs/my_mandarin_podcast.wav --seed 7
+### Running the API Server
+
+```bash
+python run_api.py --model pretrained_models/SoulX-Podcast-1.7B --port 8000
+# API docs at http://localhost:8000/docs
 ```
 
-### Method 2: Using Python Directly
+### API Usage
+
+**Simple endpoint (recommended):**
+```bash
+# Create podcast generation task
+curl -X POST "http://localhost:8000/generate-async" \
+  -F "dialogue_text=[S1] Welcome to our podcast! [S2] Thanks for having me!" \
+  -F "seed=1988"
+
+# Response: {"task_id": "abc123...", "status": "pending", ...}
+
+# Check task status
+curl "http://localhost:8000/task/{task_id}"
+
+# Download when complete
+curl "http://localhost:8000/download/{task_id}.wav" -o output.wav
+```
+
+**Custom voices endpoint:**
+```bash
+curl -X POST "http://localhost:8000/generate-async-custom" \
+  -F "prompt_audio=@voice1.wav" \
+  -F "prompt_audio=@voice2.wav" \
+  -F 'prompt_texts=["Reference text 1", "Reference text 2"]' \
+  -F "dialogue_text=[S1] Hello! [S2] Hi there!"
+```
+
+## Script Format
+
+Use `[S1]` for Alice (female) and `[S2]` for Frank (male):
+
+```
+[S1] Welcome to today's episode!
+[S2] Thanks for having me on the show.
+[S1] Let's dive into our topic.
+[S2] Sounds great, let's get started!
+```
+
+## CLI Usage
 
 ```bash
-# Activate environment
-deactivate 2>/dev/null
-source /anaconda/etc/profile.d/conda.sh
-conda activate soulxpodcast
+./generate_podcast.sh --script example/podcast_script/script_openai.json --output outputs/my_podcast.wav
+```
 
-# Set PYTHONPATH
-export PYTHONPATH=/home/azureuser/tubeonai/SoulX-Podcast
-
-# Run generation
-cd /home/azureuser/tubeonai/SoulX-Podcast
+Or directly with Python:
+```bash
 python cli/podcast.py \
-  --json_path example/podcast_script/script_english.json \
+  --json_path example/podcast_script/script_openai.json \
   --model_path pretrained_models/SoulX-Podcast-1.7B \
-  --output_path outputs/my_podcast.wav \
-  --seed 42
+  --output_path outputs/podcast.wav \
+  --seed 1988
 ```
 
-### Method 3: Using the Original Example Scripts
-
-```bash
-cd /home/azureuser/tubeonai/SoulX-Podcast
-deactivate 2>/dev/null
-source /anaconda/etc/profile.d/conda.sh
-conda activate soulxpodcast
-bash example/infer_dialogue.sh
-```
-
-## Available Example Scripts
-
-The model comes with pre-built example scripts in `example/podcast_script/`:
-
-- `script_english.json` - English dialogue
-- `script_mandarin.json` - Mandarin Chinese dialogue
-- `script_henan.json` - Henan dialect
-- `script_sichuan.json` - Sichuan dialect
-- `script_yue.json` - Cantonese (Yue) dialect
-
-## Podcast Script Format
-
-Podcast scripts are JSON files with the following structure:
+## JSON Script Format (for CLI)
 
 ```json
 {
   "speakers": {
     "S1": {
-      "prompt_audio": "path/to/audio.wav",
-      "prompt_text": "Sample text in the target voice"
+      "prompt_audio": "example/audios/en-Alice_woman.wav",
+      "prompt_text": "Sample text spoken in Alice's voice."
     },
     "S2": {
-      "prompt_audio": "path/to/audio.wav",
-      "prompt_text": "Sample text in the target voice"
+      "prompt_audio": "example/audios/en-Frank_man.wav",
+      "prompt_text": "Sample text spoken in Frank's voice."
     }
   },
   "text": [
-    ["S1", "First speaker's dialogue"],
-    ["S2", "Second speaker's dialogue"],
-    ["S1", "First speaker's next line"]
+    ["S1", "First speaker's dialogue."],
+    ["S2", "Second speaker's response."],
+    ["S1", "First speaker continues..."]
   ]
 }
 ```
 
-## Test Results
+## Environment Setup
 
-Successfully generated podcasts:
-- `outputs/mandarin.wav` (1.8MB) - Mandarin Chinese dialogue
-- `outputs/english.wav` (1.9MB) - English dialogue
+```bash
+# Create conda environment
+conda create -n soulxpodcast -y python=3.11
+conda activate soulxpodcast
 
-Both files were generated successfully with the model producing natural-sounding multi-speaker podcast audio.
+# Install dependencies
+pip install -r requirements.txt
+
+# Download model
+huggingface-cli download Soul-AILab/SoulX-Podcast-1.7B --local-dir pretrained_models/SoulX-Podcast-1.7B
+```
 
 ## Features
 
-- **Multi-speaker dialogue**: Supports conversations between multiple speakers
-- **Zero-shot voice cloning**: Clone voices from audio prompts
-- **Multiple languages**: English and Mandarin Chinese
-- **Chinese dialects**: Sichuanese, Henanese, and Cantonese
-- **Paralinguistic events**: Supports laughter, sighs, and other natural speech features
+- **Two-speaker podcasts** with pre-configured English voices
+- **Zero-shot voice cloning** with custom audio (via advanced endpoint)
+- **Paralinguistic controls**: `<|laughter|>`, `<|sigh|>`, `<|breathing|>`
+- **Web UI** for easy testing
+- **REST API** for integration with other services
 
 ## Notes
 
-- The model requires approximately 4-5GB of disk space
-- Generation time varies depending on dialogue length (typically 1-2 minutes)
-- A CUDA-capable GPU is recommended but not required
-- The environment must be activated before each use
-- Make sure to deactivate any Python venv before activating the conda environment
-
-## Troubleshooting
-
-If you encounter `ModuleNotFoundError: No module named 'torch'`:
-- Ensure you've deactivated any active venv: `deactivate`
-- Activate the correct conda environment: `conda activate soulxpodcast`
-- Verify Python path: `which python` should show `/anaconda/envs/soulxpodcast/bin/python`
-
-If you encounter `ModuleNotFoundError: No module named 'soulxpodcast'`:
-- Set PYTHONPATH: `export PYTHONPATH=/home/azureuser/tubeonai/SoulX-Podcast`
+- Model requires ~4-5GB disk space
+- Generation time varies by dialogue length (typically 30-120 seconds)
+- GPU recommended for faster inference
+- Audio output: 24kHz WAV format

@@ -3,6 +3,7 @@ FastAPI Main Application for SoulX-Podcast Voice Cloning API
 """
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import List
 import json
@@ -32,39 +33,51 @@ from api.utils import (
     cleanup_old_files,
 )
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# 创建一个全局锁来控制同步推理的并发
+# Hardcoded English voice configuration
+ENGLISH_VOICES = {
+    "S1": {
+        "path": "example/audios/en-Alice_woman.wav",
+        "prompt_text": "Welcome to Tech Talk, where we discuss the latest developments in artificial intelligence and technology."
+    },
+    "S2": {
+        "path": "example/audios/en-Frank_man.wav",
+        "prompt_text": "I'm excited to share my thoughts on how AI is transforming our world and what the future might hold."
+    }
+}
+
+# Global lock for concurrent inference control
 inference_lock = threading.Lock()
 active_inferences = 0
-MAX_CONCURRENT_SYNC_INFERENCES = 1  # 限制同步推理的并发数
+MAX_CONCURRENT_SYNC_INFERENCES = 1
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # 启动时
+    """Application lifecycle management"""
+    # Startup
     logger.info("Starting SoulX-Podcast API...")
 
-    # 初始化模型（在主线程）
+    # Initialize model (in main thread)
     logger.info("Loading model...")
     service = get_service()
     if not service.is_loaded():
         raise RuntimeError("Failed to load model")
 
-    # 启动任务管理器
+    # Start task manager
     task_manager = get_task_manager()
     task_manager.start_workers(config.max_concurrent_tasks)
 
-    # 启动文件清理任务
+    # Start file cleanup task
     async def cleanup_task():
         while True:
-            await asyncio.sleep(600)  # 每10分钟清理一次
+            await asyncio.sleep(600)  # Clean up every 10 minutes
             count = cleanup_old_files(config.temp_dir, config.file_cleanup_minutes)
             count += cleanup_old_files(config.output_dir, config.file_cleanup_minutes)
             if count > 0:
@@ -76,32 +89,32 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # 关闭时
+    # Shutdown
     logger.info("Shutting down API...")
     cleanup_task_handle.cancel()
 
-    # 快速关闭任务管理器
+    # Quick shutdown for task manager
     try:
         await asyncio.wait_for(task_manager.shutdown(), timeout=5.0)
     except asyncio.TimeoutError:
         logger.warning("Task manager shutdown timeout, forcing exit")
 
-    # 清理GPU内存
+    # Clean up GPU memory
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
     logger.info("API shutdown completed")
 
 
-# 创建FastAPI应用
+# Create FastAPI application
 app = FastAPI(
-    title="SoulX-Podcast Voice Cloning API",
-    description="基于SoulX-Podcast的语音克隆API服务",
+    title="SoulX-Podcast API",
+    description="Podcast generation API with pre-configured English voices",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# 配置CORS
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -113,18 +126,22 @@ app.add_middleware(
 
 @app.get("/", tags=["Health"])
 async def root():
-    """根路径"""
+    """Root endpoint"""
     return {
-        "name": "SoulX-Podcast Voice Cloning API",
+        "name": "SoulX-Podcast API",
         "version": "1.0.0",
         "status": "running",
-        "docs": "/docs"
+        "docs": "/docs",
+        "voices": {
+            "S1": "Alice (female host)",
+            "S2": "Frank (male guest)"
+        }
     }
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """健康检查"""
+    """Health check endpoint"""
     service = get_service()
     task_manager = get_task_manager()
 
@@ -138,139 +155,121 @@ async def health_check():
     )
 
 
-@app.post("/generate", tags=["Generation"])
-async def generate_sync(
-    prompt_audio: List[UploadFile] = File(..., description="参考音频文件（1-4个）"),
-    prompt_texts: List[str] = Form(..., description="参考文本JSON数组，如: [\"文本1\", \"文本2\"]"),
-    dialogue_text: str = Form(..., description="要生成的对话文本"),
-    seed: int = Form(default=1988, description="随机种子"),
-    temperature: float = Form(default=0.6, ge=0.1, le=2.0, description="采样温度"),
-    top_k: int = Form(default=100, ge=1, le=500, description="Top-K采样"),
-    top_p: float = Form(default=0.9, ge=0.0, le=1.0, description="Top-P采样"),
-    repetition_penalty: float = Form(default=1.25, ge=1.0, le=2.0, description="重复惩罚"),
+@app.post("/generate-async", response_model=TaskCreateResponse, tags=["Generation"])
+async def generate_async_simple(
+    dialogue_text: str = Form(..., description="Podcast script with [S1] and [S2] speaker tags"),
+    seed: int = Form(default=1988, description="Random seed for reproducibility"),
+    temperature: float = Form(default=0.6, ge=0.1, le=2.0, description="Sampling temperature"),
+    top_k: int = Form(default=100, ge=1, le=500, description="Top-K sampling"),
+    top_p: float = Form(default=0.9, ge=0.0, le=1.0, description="Top-P sampling"),
 ):
     """
-    同步生成语音（直接返回音频文件）
+    Generate podcast audio asynchronously (returns task ID).
 
-    适用于短音频生成（预计<30秒）
+    Uses pre-configured English voices:
+    - S1: Alice (female host)
+    - S2: Frank (male guest)
+
+    Script format: [S1] Hello! [S2] Hi there! [S1] Let's begin...
     """
     task_id = generate_task_id()
 
     try:
-        # 验证音频文件
-        validate_audio_files(prompt_audio)
+        # Validate dialogue format
+        dialogue_text = dialogue_text.strip()
+        if not dialogue_text:
+            raise HTTPException(status_code=400, detail="Dialogue text cannot be empty")
 
-        # 解析prompt_texts
-        try:
-            prompt_text_list = prompt_texts
-            if not isinstance(prompt_text_list, list):
-                raise ValueError("prompt_texts必须是JSON数组")
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=400, detail=f"prompt_texts JSON格式错误: {str(e)}")
-
-        # 验证数量匹配
-        if len(prompt_audio) != len(prompt_text_list):
+        # Check for speaker tags
+        if not re.search(r'\[S[1-2]\]', dialogue_text):
             raise HTTPException(
                 status_code=400,
-                detail=f"参考音频数量({len(prompt_audio)})与参考文本数量({len(prompt_text_list)})不匹配"
+                detail="Script must use [S1] and [S2] speaker tags. Example: [S1] Hello! [S2] Hi!"
             )
 
-        # 验证对话格式
-        is_valid, error_msg = validate_dialogue_format(dialogue_text, len(prompt_audio))
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=error_msg)
+        # Use hardcoded English voices
+        audio_paths = [ENGLISH_VOICES["S1"]["path"], ENGLISH_VOICES["S2"]["path"]]
+        prompt_texts = [ENGLISH_VOICES["S1"]["prompt_text"], ENGLISH_VOICES["S2"]["prompt_text"]]
 
-        # 保存上传的文件
-        audio_paths = []
-        for i, file in enumerate(prompt_audio):
-            path = save_upload_file(file, task_id, i)
-            audio_paths.append(str(path))
-
-        logger.info(f"Sync generation started: task_id={task_id}, speakers={len(audio_paths)}")
-
-        # 调用服务生成
-        service = get_service()
-        sample_rate, audio_array = service.generate(
+        # Create async task
+        task_manager = get_task_manager()
+        task = await task_manager.create_task(
+            task_id=task_id,
             prompt_audio_paths=audio_paths,
-            prompt_texts=prompt_text_list,
+            prompt_texts=prompt_texts,
             dialogue_text=dialogue_text,
             seed=seed,
             temperature=temperature,
             top_k=top_k,
             top_p=top_p,
-            repetition_penalty=repetition_penalty,
+            repetition_penalty=1.25,
         )
 
-        # 保存结果
-        output_filename = f"{task_id}.wav"
-        output_path = config.output_dir / output_filename
-        wavfile.write(str(output_path), sample_rate, audio_array)
+        logger.info(f"Async task created: task_id={task_id}")
 
-        logger.info(f"Sync generation completed: task_id={task_id}")
-
-        # 返回文件
-        return FileResponse(
-            path=str(output_path),
-            media_type="audio/wav",
-            filename=output_filename
+        return TaskCreateResponse(
+            task_id=task_id,
+            status=task.status,
+            created_at=task.created_at,
+            message=f"Task created. Queue position: {task_manager.queue.qsize()}"
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Sync generation failed: {e}", exc_info=True)
+        logger.error(f"Task creation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/generate-async", response_model=TaskCreateResponse, tags=["Generation"])
-async def generate_async(
-    prompt_audio: List[UploadFile] = File(..., description="参考音频文件（1-4个）"),
-    prompt_texts: str = Form(..., description="参考文本JSON数组"),
-    dialogue_text: str = Form(..., description="要生成的对话文本"),
-    seed: int = Form(default=1988, description="随机种子"),
-    temperature: float = Form(default=0.6, ge=0.1, le=2.0, description="采样温度"),
-    top_k: int = Form(default=100, ge=1, le=500, description="Top-K采样"),
-    top_p: float = Form(default=0.9, ge=0.0, le=1.0, description="Top-P采样"),
-    repetition_penalty: float = Form(default=1.25, ge=1.0, le=2.0, description="重复惩罚"),
+@app.post("/generate-async-custom", response_model=TaskCreateResponse, tags=["Generation"])
+async def generate_async_custom(
+    prompt_audio: List[UploadFile] = File(..., description="Reference audio files (1-4)"),
+    prompt_texts: str = Form(..., description="Reference texts as JSON array"),
+    dialogue_text: str = Form(..., description="Dialogue text to generate"),
+    seed: int = Form(default=1988, description="Random seed"),
+    temperature: float = Form(default=0.6, ge=0.1, le=2.0, description="Sampling temperature"),
+    top_k: int = Form(default=100, ge=1, le=500, description="Top-K sampling"),
+    top_p: float = Form(default=0.9, ge=0.0, le=1.0, description="Top-P sampling"),
+    repetition_penalty: float = Form(default=1.25, ge=1.0, le=2.0, description="Repetition penalty"),
 ):
     """
-    异步生成语音（返回任务ID）
+    Generate podcast with custom voice files (advanced endpoint).
 
-    适用于长音频生成或批量任务
+    Upload your own voice reference audio files.
     """
     task_id = generate_task_id()
 
     try:
-        # 验证音频文件
+        # Validate audio files
         validate_audio_files(prompt_audio)
 
-        # 解析prompt_texts
+        # Parse prompt_texts
         try:
             prompt_text_list = json.loads(prompt_texts)
             if not isinstance(prompt_text_list, list):
-                raise ValueError("prompt_texts必须是JSON数组")
+                raise ValueError("prompt_texts must be a JSON array")
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=400, detail=f"prompt_texts JSON格式错误: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"prompt_texts JSON parse error: {str(e)}")
 
-        # 验证数量匹配
+        # Validate count match
         if len(prompt_audio) != len(prompt_text_list):
             raise HTTPException(
                 status_code=400,
-                detail=f"参考音频数量({len(prompt_audio)})与参考文本数量({len(prompt_text_list)})不匹配"
+                detail=f"Audio count ({len(prompt_audio)}) doesn't match text count ({len(prompt_text_list)})"
             )
 
-        # 验证对话格式
+        # Validate dialogue format
         is_valid, error_msg = validate_dialogue_format(dialogue_text, len(prompt_audio))
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-        # 保存上传的文件
+        # Save uploaded files
         audio_paths = []
         for i, file in enumerate(prompt_audio):
             path = save_upload_file(file, task_id, i)
             audio_paths.append(str(path))
 
-        # 创建异步任务
+        # Create async task
         task_manager = get_task_manager()
         task = await task_manager.create_task(
             task_id=task_id,
@@ -284,13 +283,13 @@ async def generate_async(
             repetition_penalty=repetition_penalty,
         )
 
-        logger.info(f"Async task created: task_id={task_id}")
+        logger.info(f"Custom async task created: task_id={task_id}")
 
         return TaskCreateResponse(
             task_id=task_id,
             status=task.status,
             created_at=task.created_at,
-            message=f"任务已创建，当前队列中有 {task_manager.queue.qsize()} 个任务"
+            message=f"Task created. Queue position: {task_manager.queue.qsize()}"
         )
 
     except HTTPException:
@@ -302,14 +301,14 @@ async def generate_async(
 
 @app.get("/task/{task_id}", response_model=TaskStatusResponse, tags=["Tasks"])
 async def get_task_status(task_id: str):
-    """查询任务状态"""
+    """Query task status"""
     task_manager = get_task_manager()
     task = task_manager.get_task(task_id)
 
     if task is None:
-        raise HTTPException(status_code=404, detail="任务不存在")
+        raise HTTPException(status_code=404, detail="Task not found")
 
-    # 构建结果URL
+    # Build result URL
     result_url = None
     if task.status == TaskStatus.COMPLETED and task.result_path:
         result_url = f"/download/{task.result_path.name}"
@@ -328,11 +327,11 @@ async def get_task_status(task_id: str):
 
 @app.get("/download/{filename}", tags=["Download"])
 async def download_file(filename: str):
-    """下载生成的音频文件"""
+    """Download generated audio file"""
     file_path = config.output_dir / filename
 
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
+        raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(
         path=str(file_path),
@@ -343,7 +342,7 @@ async def download_file(filename: str):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """全局异常处理"""
+    """Global exception handler"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
