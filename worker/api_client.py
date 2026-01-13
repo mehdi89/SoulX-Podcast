@@ -32,6 +32,7 @@ class TubeOnAIClient:
         self.headers = {
             "Authorization": f"Bearer {config.api_token}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
         self.timeout = 30  # seconds
 
