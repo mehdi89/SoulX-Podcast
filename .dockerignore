@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+*.egg
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Local files
+.env
+worker/.env
+outputs/
+pretrained_models/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Examples (keep only audio samples)
+example/podcast_script/
+
+# Misc
+.DS_Store
+*.log
