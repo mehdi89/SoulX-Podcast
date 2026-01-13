@@ -1,0 +1,26 @@
+{
+    "speakers": {
+      "S1": {
+        "prompt_audio": "example/audios/en-Alice_woman.wav",
+        "prompt_text": "Welcome to Tech Talk, where we discuss the latest developments in artificial intelligence and technology."
+      },
+      "S2": {
+        "prompt_audio": "example/audios/en-Frank_man.wav",
+        "prompt_text": "I'm excited to share my thoughts on how AI is transforming our world and what the future might hold."
+      }
+    },
+    "text": [
+      ["S1", "Hey everyone, welcome back to Tech Talk! Today we're diving into OpenAI, one of the most influential AI companies in the world. So Alex, what's your take on OpenAI's journey?"],
+      ["S2", "Oh man, it's been absolutely wild! OpenAI started back in 2015 as a nonprofit with this mission to ensure AI benefits all of humanity. And now look at them—they've created GPT-4, ChatGPT, DALL-E... They're literally shaping how millions of people interact with AI every single day."],
+      ["S1", "Right? And that transition from nonprofit to capped-profit was pretty controversial. Some people thought they were selling out, but honestly, the amount of compute power needed for these models is insane. You can't really train cutting-edge AI on a shoestring budget."],
+      ["S2", "Exactly! I mean, training GPT-4 probably cost hundreds of millions of dollars. But here's what fascinates me—they managed to make AI accessible to regular people. Before ChatGPT launched in late 2022, most folks had no idea what a large language model even was."],
+      ["S1", "That's the thing that really changed everything. Suddenly, my mom is asking me about ChatGPT, teachers are worried about students using it for homework, and businesses are scrambling to figure out how to integrate it. It went from zero to a hundred million users faster than any app in history."],
+      ["S2", "And the competition it sparked! Google rushed out Bard, Microsoft invested billions into OpenAI and integrated it into Bing, Anthropic launched Claude... The whole AI landscape transformed basically overnight."],
+      ["S1", "Yeah, but I do worry about the safety aspect. OpenAI talks a lot about alignment and making sure AI is safe and beneficial, but are they moving too fast? Some of their own researchers have raised concerns about rushing to deployment."],
+      ["S2", "That's a fair point. The tension between innovation and safety is real. But I think they're at least trying to be thoughtful about it—they have those red teaming exercises, they do staged releases, and they're pretty transparent about limitations. Not perfect, but better than some alternatives."],
+      ["S1", "True. And their impact on the open source community has been interesting too. They released GPT-2 cautiously, didn't release GPT-3's weights at all, but that actually motivated others to create open alternatives like LLaMA and Mistral."],
+      ["S2", "The whole ecosystem is evolving so fast. What do you think OpenAI looks like five years from now?"],
+      ["S1", "Honestly? I think they'll either be the dominant AI platform that everyone builds on, or they'll face serious competition from open source models that catch up. It's going to be fascinating to watch. Well, that's all for today's episode! Thanks for tuning in!"],
+      ["S2", "Thanks everyone! Don't forget to subscribe and let us know what you think about OpenAI in the comments. See you next time!"]
+    ]
+  }
