@@ -23,11 +23,10 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Force reinstall torch ecosystem with compatible versions to avoid conflicts with base image
+# Remove conda-installed torch ecosystem to avoid conflicts, then install via pip
 # The base image has torch/torchvision via conda which conflicts with pip packages
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip uninstall -y torch torchvision torchaudio && \
-    pip install --no-cache-dir torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu121
+RUN conda remove -y pytorch torchvision torchaudio 2>/dev/null || true && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Install huggingface CLI for model download
 RUN pip install --no-cache-dir huggingface_hub
