@@ -1,0 +1,48 @@
+# Systemd service file for SoulX-Podcast Worker
+#
+# Installation:
+#   sudo cp worker/podcast-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable podcast-worker
+#   sudo systemctl start podcast-worker
+#
+# Commands:
+#   sudo systemctl status podcast-worker    # Check status
+#   sudo journalctl -u podcast-worker -f    # View logs
+#   sudo systemctl restart podcast-worker   # Restart
+
+[Unit]
+Description=SoulX-Podcast Worker
+Documentation=https://github.com/mehdi89/SoulX-Podcast
+After=network.target
+
+[Service]
+Type=simple
+
+# Change these paths to match your setup
+User=azureuser
+Group=azureuser
+WorkingDirectory=/home/azureuser/SoulX-Podcast
+
+# Conda environment activation and worker start
+# Adjust the conda path if your installation is different
+ExecStart=/bin/bash -c 'source /home/azureuser/anaconda3/etc/profile.d/conda.sh && conda activate soulxpodcast && python run_worker.py'
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Resource limits (adjust as needed)
+# LimitNOFILE=65535
+# MemoryMax=32G
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=podcast-worker
+
+[Install]
+WantedBy=multi-user.target

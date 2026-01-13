@@ -12,3 +12,9 @@ onnxruntime
 onnxruntime-gpu
 einops
 gradio
+
+# Worker dependencies
+boto3
+requests
+python-dotenv
+soundfile

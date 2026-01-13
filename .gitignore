@@ -8,6 +8,9 @@ outputs/
 # API temporary files
 api/temp/
 api/outputs/
+
+# Worker credentials (never commit!)
+worker/.env
 # C extensions
 *.so
 
