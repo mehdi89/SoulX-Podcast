@@ -23,8 +23,10 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Uninstall base image's torchvision to avoid conflicts, then install all dependencies
+RUN pip uninstall -y torchvision && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir torchvision==0.22.1
 
 # Install huggingface CLI for model download
 RUN pip install --no-cache-dir huggingface_hub
