@@ -29,6 +29,11 @@ class WorkerConfig:
     s3_region: str
     s3_endpoint_url: str | None  # For S3-compatible storage
 
+    # Azure Queue (for KEDA scaling message cleanup)
+    azure_queue_enabled: bool
+    azure_queue_connection_string: str
+    azure_queue_name: str
+
     # Model
     model_path: str
 
@@ -77,6 +82,11 @@ class WorkerConfig:
             s3_secret_key=os.getenv("S3_SECRET_KEY", ""),
             s3_region=os.getenv("S3_REGION", "us-east-1"),
             s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),  # Optional, for MinIO etc.
+
+            # Azure Queue (for KEDA scaling message cleanup)
+            azure_queue_enabled=os.getenv("AZURE_QUEUE_ENABLED", "false").lower() == "true",
+            azure_queue_connection_string=os.getenv("AZURE_QUEUE_CONNECTION_STRING", ""),
+            azure_queue_name=os.getenv("AZURE_QUEUE_NAME", "podcast-jobs"),
 
             # Model
             model_path=os.getenv("MODEL_PATH", "pretrained_models/SoulX-Podcast-1.7B"),

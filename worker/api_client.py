@@ -67,6 +67,43 @@ class TubeOnAIClient:
             logger.error(f"Failed to claim job: {e}")
             return None
 
+    def get_job(self, job_id: str) -> Optional[PodcastJob]:
+        """
+        Fetch and claim a specific job by ID (for queue-based flow).
+        Returns None if job not found or already completed.
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/jobs/{job_id}",
+                params={"worker_id": self.config.worker_id},
+                headers=self.headers,
+                timeout=self.timeout,
+            )
+
+            if response.status_code == 404:
+                # Job not found or already completed
+                logger.warning(f"Job {job_id} not found or already completed")
+                return None
+
+            if response.status_code == 409:
+                # Job claimed by another worker
+                logger.warning(f"Job {job_id} already claimed by another worker")
+                return None
+
+            response.raise_for_status()
+            data = response.json()
+
+            return PodcastJob(
+                job_id=data["job_id"],
+                script_text=data["script_text"],
+                seed=data.get("seed", 1988),
+                s3_upload_path=data["s3_upload_path"],
+            )
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get job {job_id}: {e}")
+            return None
+
     def complete_job(
         self,
         job_id: str,
