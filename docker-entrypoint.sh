@@ -9,17 +9,12 @@ echo "=============================================="
 echo "Worker ID: ${WORKER_ID:-not-set}"
 echo "Model Path: $MODEL_DIR"
 echo "GPU Available: $(python -c 'import torch; print(torch.cuda.is_available())')"
-echo ""
 
-# Check if model exists, download if not
-if [ ! -f "$MODEL_DIR/config.json" ]; then
-    echo "Model not found. Downloading..."
-    huggingface-cli download Soul-AILab/SoulX-Podcast-1.7B \
-        --local-dir "$MODEL_DIR" \
-        --local-dir-use-symlinks False
-    echo "Model downloaded successfully!"
+# Model is pre-baked in Docker image
+if [ -f "$MODEL_DIR/config.json" ]; then
+    echo "Model: Pre-loaded in image"
 else
-    echo "Model found at $MODEL_DIR"
+    echo "WARNING: Model not found at $MODEL_DIR"
 fi
 
 echo ""

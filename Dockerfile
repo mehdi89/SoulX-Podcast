@@ -41,6 +41,12 @@ RUN chmod +x docker-entrypoint.sh
 RUN mkdir -p pretrained_models outputs && \
     chmod -R 777 pretrained_models outputs
 
+# Pre-download model during build for faster cold starts
+# This adds ~4-5GB to image but eliminates runtime download
+RUN huggingface-cli download Soul-AILab/SoulX-Podcast-1.7B \
+    --local-dir pretrained_models/SoulX-Podcast-1.7B \
+    --local-dir-use-symlinks False
+
 # Health check (checks GPU and basic imports)
 HEALTHCHECK --interval=60s --timeout=30s --start-period=300s --retries=3 \
     CMD python -c "import torch; from worker.config import WorkerConfig; print('OK')" || exit 1
