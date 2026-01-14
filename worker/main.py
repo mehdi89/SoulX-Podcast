@@ -2,12 +2,14 @@
 Main worker loop - receives jobs from Azure Queue and processes them.
 """
 
+import json
 import logging
 import os
 import signal
 import sys
 import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from .api_client import TubeOnAIClient
 from .config import WorkerConfig
@@ -31,6 +33,56 @@ logging.getLogger("azure").setLevel(logging.WARNING)
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
 
+# Global reference for health check
+_worker_instance = None
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    """Simple HTTP handler for health checks."""
+
+    def log_message(self, format, *args):
+        """Suppress default logging."""
+        pass
+
+    def do_GET(self):
+        """Handle GET requests."""
+        if self.path == "/health" or self.path == "/":
+            self._send_health_response()
+        else:
+            self.send_error(404)
+
+    def _send_health_response(self):
+        """Send health check response."""
+        global _worker_instance
+
+        status = "healthy"
+        current_job = None
+
+        if _worker_instance:
+            if not _worker_instance.running:
+                status = "stopping"
+            current_job = _worker_instance.current_job_id
+
+        response = {
+            "status": status,
+            "current_job": current_job,
+        }
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(response).encode())
+
+
+def start_health_server(port: int = 8080):
+    """Start the health check HTTP server in a background thread."""
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info(f"Health server started on port {port}")
+    return server
+
+
 class PodcastWorker:
     """Main worker that receives jobs from Azure Queue and processes them."""
 
@@ -47,11 +99,17 @@ class PodcastWorker:
 
     def start(self):
         """Start the worker."""
+        global _worker_instance
+        _worker_instance = self
+
         logger.info(f"Starting worker: {self.config.worker_id}")
         logger.info(f"Server: {self.config.server_name} ({self.config.server_ip})")
         logger.info(f"API URL: {self.config.api_url}")
         logger.info(f"S3 Bucket: {self.config.s3_bucket}")
         logger.info(f"Azure Queue: {self.config.azure_queue_name} (enabled: {self.config.azure_queue_enabled})")
+
+        # Start health server for Azure liveness probes
+        start_health_server(port=8080)
 
         # Validate config
         errors = self.config.validate()
