@@ -7,7 +7,7 @@ import logging
 import os
 import signal
 import sys
-import threading
+import threading  # Still used for health server thread
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -95,7 +95,6 @@ class PodcastWorker:
 
         self.running = False
         self.current_job_id = None
-        self.heartbeat_thread = None
 
     def start(self):
         """Start the worker."""
@@ -103,7 +102,6 @@ class PodcastWorker:
         _worker_instance = self
 
         logger.info(f"Starting worker: {self.config.worker_id}")
-        logger.info(f"Server: {self.config.server_name} ({self.config.server_ip})")
         logger.info(f"API URL: {self.config.api_url}")
         logger.info(f"S3 Bucket: {self.config.s3_bucket}")
         logger.info(f"Azure Queue: {self.config.azure_queue_name} (enabled: {self.config.azure_queue_enabled})")
@@ -128,10 +126,6 @@ class PodcastWorker:
 
         self.running = True
 
-        # Start heartbeat thread
-        self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
-        self.heartbeat_thread.start()
-
         # Main loop - queue-based or fallback to polling
         if self.config.azure_queue_enabled:
             self._run_queue_loop()
@@ -141,9 +135,6 @@ class PodcastWorker:
     def _run_queue_loop(self):
         """Main loop - receive jobs from Azure Queue."""
         logger.info("Worker ready, waiting for queue messages...")
-
-        # Send initial heartbeat
-        self.api_client.heartbeat(status="idle")
 
         while self.running:
             try:
@@ -182,9 +173,6 @@ class PodcastWorker:
     def _run_poll_loop(self):
         """Fallback polling loop when queue is disabled."""
         logger.info("Worker ready, polling for jobs...")
-
-        # Send initial heartbeat
-        self.api_client.heartbeat(status="idle")
 
         while self.running:
             try:
@@ -244,20 +232,6 @@ class PodcastWorker:
 
         finally:
             self.current_job_id = None
-
-    def _heartbeat_loop(self):
-        """Send periodic heartbeats."""
-        while self.running:
-            try:
-                status = "processing" if self.current_job_id else "idle"
-                self.api_client.heartbeat(
-                    status=status,
-                    current_job_id=self.current_job_id,
-                )
-            except Exception as e:
-                logger.warning(f"Heartbeat error: {e}")
-
-            time.sleep(self.config.heartbeat_interval)
 
     def _cleanup(self, path: str):
         """Remove temporary file."""

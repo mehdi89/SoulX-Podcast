@@ -15,8 +15,6 @@ class WorkerConfig:
 
     # Worker identity
     worker_id: str
-    server_name: str
-    server_ip: str
 
     # TubeOnAI API
     api_url: str
@@ -39,7 +37,6 @@ class WorkerConfig:
 
     # Worker settings
     poll_interval: int  # seconds
-    heartbeat_interval: int  # seconds
 
     @classmethod
     def from_env(cls, env_path: str | None = None) -> "WorkerConfig":
@@ -58,19 +55,9 @@ class WorkerConfig:
             elif root_env.exists():
                 load_dotenv(root_env)
 
-        # Get server IP automatically if not set
-        server_ip = os.getenv("SERVER_IP", "")
-        if not server_ip:
-            try:
-                server_ip = socket.gethostbyname(socket.gethostname())
-            except Exception:
-                server_ip = "unknown"
-
         return cls(
             # Worker identity
             worker_id=os.getenv("WORKER_ID", f"worker-{socket.gethostname()}"),
-            server_name=os.getenv("SERVER_NAME", socket.gethostname()),
-            server_ip=server_ip,
 
             # TubeOnAI API
             api_url=os.getenv("TUBEONAI_API_URL", "http://localhost:8080/podcast-worker/v1"),
@@ -93,7 +80,6 @@ class WorkerConfig:
 
             # Worker settings
             poll_interval=int(os.getenv("POLL_INTERVAL", "10")),
-            heartbeat_interval=int(os.getenv("HEARTBEAT_INTERVAL", "60")),
         )
 
     def validate(self) -> list[str]:

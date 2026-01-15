@@ -149,29 +149,3 @@ class TubeOnAIClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to mark job {job_id} as failed: {e}")
             return False
-
-    def heartbeat(
-        self,
-        status: str = "idle",
-        current_job_id: Optional[str] = None,
-    ) -> bool:
-        """Send heartbeat to TubeOnAI to indicate worker is alive."""
-        try:
-            response = requests.post(
-                f"{self.base_url}/workers/heartbeat",
-                json={
-                    "worker_id": self.config.worker_id,
-                    "server_ip": self.config.server_ip,
-                    "server_name": self.config.server_name,
-                    "status": status,
-                    "current_job_id": current_job_id,
-                },
-                headers=self.headers,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            return True
-
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Heartbeat failed: {e}")
-            return False
