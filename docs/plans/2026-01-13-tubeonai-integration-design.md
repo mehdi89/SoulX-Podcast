@@ -1,8 +1,16 @@
 # TubeOnAI Podcast Integration Design
 
 **Date:** 2026-01-13
-**Status:** Approved
+**Status:** ⚠️ HISTORICAL - Partially Superseded
 **Author:** Claude (with Mehdi)
+
+> **Note (2026-01-15):** This document describes the original design. The implementation has evolved:
+> - **Deployment**: Now uses Azure Container Apps with GPU (not manual VM setup)
+> - **Job distribution**: Now uses Azure Storage Queue (not API polling)
+> - **Worker tracking**: Removed - Azure Container Apps handles scaling/health
+> - **Heartbeat system**: Removed - replaced by HTTP health endpoint for Azure liveness probes
+>
+> See `readme.md` for current deployment architecture.
 
 ## Overview
 

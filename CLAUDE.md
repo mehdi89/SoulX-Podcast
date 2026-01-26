@@ -10,17 +10,28 @@ SoulX-Podcast is a podcast generation system that converts text scripts to natur
 SoulX-Podcast/
 ├── webui.py              # Gradio web interface (simplified)
 ├── run_api.py            # FastAPI server launcher
-├── api/                  # REST API
+├── run_worker.py         # Production worker entry point
+├── Dockerfile            # Azure Container Apps deployment
+├── docker-entrypoint.sh  # Container startup script
+├── api/                  # REST API (for local dev/testing)
 │   ├── main.py          # Endpoints: /generate-async, /task/{id}, /download
 │   ├── service.py       # Model inference wrapper
 │   ├── tasks.py         # Async task queue manager
 │   └── models.py        # Pydantic schemas
+├── worker/               # Production worker (Azure Container Apps)
+│   ├── main.py          # Main loop - Azure Queue consumer
+│   ├── config.py        # Environment configuration
+│   ├── api_client.py    # TubeOnAI API client
+│   ├── queue_client.py  # Azure Storage Queue client
+│   ├── s3_client.py     # S3 upload client
+│   └── processor.py     # Audio generation wrapper
 ├── soulxpodcast/         # Core model code
 │   ├── models/          # SoulXPodcast model class
 │   ├── engine/          # LLM engines (HF, VLLM)
 │   └── utils/           # Text processing, audio handling
 ├── cli/                  # Command-line tools
 │   └── podcast.py       # CLI for JSON script generation
+├── .github/workflows/    # GitHub Actions CI/CD
 └── example/
     ├── audios/          # Voice samples (en-Alice, en-Frank)
     └── podcast_script/  # Example JSON scripts
@@ -99,11 +110,28 @@ Key packages: `torch`, `transformers`, `gradio`, `fastapi`, `s3tokenizer`
 
 Model requires ~4-5GB disk space and GPU recommended.
 
-## TubeOnAI Integration
+## TubeOnAI Integration (Production)
 
-This fork is designed to receive podcast scripts from TubeOnAI (YouTube summary service) and generate audio. The simplified API accepts plain text, making integration straightforward:
+Deployed on **Azure Container Apps** with GPU (NC8as-T4). Job flow:
 
-1. TubeOnAI generates script with `[S1]`/`[S2]` tags
-2. POST to `/generate-async`
-3. Poll `/task/{id}` until complete
-4. Download from `/download/{filename}`
+```
+TubeOnAI Backend → Azure Queue → Worker Container → S3 → Backend Callback
+```
+
+1. TubeOnAI creates job, pushes message to Azure Storage Queue
+2. Worker receives message, fetches job details from API
+3. Worker generates audio using SoulX-Podcast model
+4. Worker uploads WAV to S3
+5. Worker calls API to mark job complete
+6. TubeOnAI notifies user via WebSocket/email
+
+### Deployment
+
+Push to `main` triggers GitHub Actions → builds Docker image → deploys to Azure Container Apps.
+
+### Key Files
+
+- `Dockerfile` - Container with pre-baked model
+- `worker/main.py` - Queue consumer loop + health endpoint
+- `worker/queue_client.py` - Azure Storage Queue client
+- `.github/workflows/*.yml` - CI/CD pipeline

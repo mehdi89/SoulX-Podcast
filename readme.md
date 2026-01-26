@@ -116,41 +116,65 @@ curl "http://localhost:8000/download/{task_id}.wav" -o podcast.wav
 | `/download/{filename}` | GET | Download generated audio |
 | `/health` | GET | Health check |
 
-## Production Worker (TubeOnAI Integration)
+## Production Deployment (Azure Container Apps)
 
-The worker is a pull-based service that polls TubeOnAI for podcast generation jobs. It supports multiple GPU servers for horizontal scaling.
+The worker runs on **Azure Container Apps** with GPU support (NC8as-T4), using Azure Queue for job distribution. Deployment is automated via GitHub Actions.
 
 ### Architecture
 
 ```
-TubeOnAI Backend                    GPU Workers
-┌─────────────┐                ┌─────────────────┐
-│  Job Queue  │◄───── poll ────│  GPU Server 1   │
-│  (Database) │                └────────┬────────┘
-│             │                         │
-│             │                ┌────────▼────────┐
-│             │                │       S3        │
-│             │                │    (Storage)    │
-│             │                └─────────────────┘
-└─────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         TubeOnAI Backend                            │
+│  ┌──────────┐    ┌──────────────┐    ┌─────────────────────────┐   │
+│  │  Web App │───▶│   Laravel    │───▶│     Azure Queue         │   │
+│  │  (User)  │    │   Backend    │    │  (podcast-jobs queue)   │   │
+│  └──────────┘    └──────────────┘    └───────────┬─────────────┘   │
+│                         │                        │                  │
+│                         │ Notifications          │                  │
+│                         ▼                        │                  │
+│              ┌──────────────────┐                │                  │
+│              │ WebSocket/Email  │                │                  │
+│              └──────────────────┘                │                  │
+└──────────────────────────────────────────────────┼──────────────────┘
+                                                   │
+                    ┌──────────────────────────────▼──────────────────┐
+                    │           Azure Container Apps (GPU)            │
+                    │  ┌─────────────────────────────────────────┐    │
+                    │  │  Podcast Worker Container               │    │
+                    │  │  - Receives jobs from Azure Queue       │    │
+                    │  │  - Generates audio with SoulX-Podcast   │    │
+                    │  │  - Uploads to S3                        │    │
+                    │  │  - Reports completion to API            │    │
+                    │  └─────────────────────────────────────────┘    │
+                    │                      │                          │
+                    │                      ▼                          │
+                    │              ┌─────────────┐                    │
+                    │              │     S3      │                    │
+                    │              │   Storage   │                    │
+                    │              └─────────────┘                    │
+                    └─────────────────────────────────────────────────┘
 ```
 
-### Quick Setup (New GPU Server)
+### Deployment Flow
 
-```bash
-# One-command setup
-curl -fsSL https://raw.githubusercontent.com/mehdi89/SoulX-Podcast/main/setup_worker.sh | bash
-
-# Configure
-cd SoulX-Podcast
-nano worker/.env  # Add your credentials
-
-# Run
-conda activate soulxpodcast
-python run_worker.py
+```
+GitHub (main branch) → GitHub Actions → Azure Container Registry → Azure Container Apps
 ```
 
-### Manual Setup
+Pushing to `main` automatically triggers:
+1. Docker image build (includes pre-baked model for fast cold starts)
+2. Push to Azure Container Registry
+3. Deploy to Azure Container Apps with GPU
+
+### CI/CD Configuration
+
+The GitHub Actions workflow (`.github/workflows/`) handles deployment:
+- **Trigger**: Push to `main` branch
+- **Authentication**: Azure OIDC (federated credentials)
+- **Container App**: `tubeonai-container-gpu`
+- **Resource Group**: `TubeOnAI`
+
+### Local Development
 
 ```bash
 # Clone and setup
@@ -168,60 +192,59 @@ huggingface-cli download Soul-AILab/SoulX-Podcast-1.7B \
 cp worker/.env.example worker/.env
 nano worker/.env  # Edit with your credentials
 
-# Run worker
+# Run worker locally
 python run_worker.py
 ```
 
 ### Configuration
 
-Edit `worker/.env`:
+Environment variables (set in Azure Container Apps or `worker/.env` for local dev):
 
 ```bash
-# Worker identity (unique per server)
-WORKER_ID=gpu-server-1
-SERVER_NAME=Azure ML East US
+# Worker identity
+WORKER_ID=podcast-worker-1
 
 # TubeOnAI API
 TUBEONAI_API_URL=https://api.tubeonai.com/podcast-worker/v1
 TUBEONAI_API_TOKEN=your-token-here
 
-# S3 Storage
+# Azure Queue (primary job source)
+AZURE_QUEUE_ENABLED=true
+AZURE_QUEUE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
+AZURE_QUEUE_NAME=podcast-jobs
+
+# S3 Storage (for generated audio)
 S3_BUCKET=your-bucket
 S3_ACCESS_KEY=your-key
 S3_SECRET_KEY=your-secret
 S3_REGION=us-east-1
 
+# Model
+MODEL_PATH=pretrained_models/SoulX-Podcast-1.7B
+
 # Settings
-POLL_INTERVAL=10      # Seconds between job polls
-HEARTBEAT_INTERVAL=60 # Seconds between heartbeats
+POLL_INTERVAL=10  # Seconds between queue polls when no messages
 ```
 
-### Run as System Service
+### Docker Configuration
 
-```bash
-# Install service
-sudo cp worker/podcast-worker.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable podcast-worker
-sudo systemctl start podcast-worker
-
-# Check status
-sudo systemctl status podcast-worker
-sudo journalctl -u podcast-worker -f  # View logs
-```
+The `Dockerfile` is optimized for Azure Container Apps:
+- Base image: `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime`
+- Pre-bakes the 1.7B model (~4-5GB) for faster cold starts
+- Exposes port 8080 for health checks
+- Health endpoint at `/health` for Azure liveness probes
 
 ### Worker API (for TubeOnAI Backend)
 
-The worker expects these endpoints from TubeOnAI:
+The worker uses these endpoints from TubeOnAI:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/jobs/claim` | POST | Claim a pending job |
+| `/jobs/{id}` | GET | Fetch job details |
 | `/jobs/{id}/complete` | POST | Mark job complete with S3 URL |
 | `/jobs/{id}/failed` | POST | Mark job as failed |
-| `/workers/heartbeat` | POST | Send health status |
 
-See [Integration Design Doc](docs/plans/2026-01-13-tubeonai-integration-design.md) for full API specs.
+Jobs are distributed via **Azure Storage Queue** (not API polling).
 
 ## Original Project
 
