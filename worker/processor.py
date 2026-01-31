@@ -116,6 +116,12 @@ class PodcastProcessor:
 
         logger.info(f"Processing {len(target_text_list)} dialogue turns")
 
+        # Log GPU memory before generation
+        if torch.cuda.is_available():
+            gpu_mem_gb = torch.cuda.memory_allocated() / 1024**3
+            gpu_total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            logger.info(f"GPU memory before generation: {gpu_mem_gb:.2f}GB / {gpu_total_gb:.2f}GB")
+
         # Use hardcoded English voices
         prompt_wav_list = [self.s1_prompt_wav, self.s2_prompt_wav]
         prompt_text_list = [self.s1_prompt_text, self.s2_prompt_text]
@@ -124,9 +130,17 @@ class PodcastProcessor:
         data = self._process_single(target_text_list, prompt_wav_list, prompt_text_list)
 
         # Generate audio
+        logger.info("Starting model.forward_longform...")
         results_dict = self.model.forward_longform(**data)
+        logger.info("model.forward_longform completed")
+
+        # Log GPU memory after generation
+        if torch.cuda.is_available():
+            gpu_mem_gb = torch.cuda.memory_allocated() / 1024**3
+            logger.info(f"GPU memory after generation: {gpu_mem_gb:.2f}GB")
 
         # Concatenate all generated audio segments
+        logger.info(f"Concatenating {len(results_dict['generated_wavs'])} audio segments...")
         target_audio = None
         for i in range(len(results_dict['generated_wavs'])):
             if target_audio is None:
@@ -135,6 +149,7 @@ class PodcastProcessor:
                 target_audio = torch.concat([target_audio, results_dict['generated_wavs'][i]], axis=1)
 
         audio_numpy = target_audio.cpu().squeeze(0).numpy()
+        logger.info(f"Audio concatenation complete, moving to CPU")
 
         # Calculate duration
         sample_rate = 24000

@@ -1,3 +1,5 @@
+import logging
+import sys
 import time
 from datetime import datetime
 
@@ -8,6 +10,9 @@ from copy import deepcopy
 import numpy as np
 import s3tokenizer
 import torch
+
+# Configure logging for production visibility
+logger = logging.getLogger(__name__)
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache
 from soulxpodcast.config import Config, SamplingParams, AutoPretrainedConfig
@@ -108,12 +113,17 @@ class SoulXPodcast(torch.nn.Module):
                 history_inputs.append(prompt_text_tokens_for_llm[i] + speech_tokens_i )
 
         generated_wavs, results_dict = [], {}
-        
+
         # LLM generation
         inputs = list(chain.from_iterable(prompt_inputs))
         cache_config = AutoPretrainedConfig().from_dataclass(self.llm.config.hf_config)
         past_key_values = DynamicCache(config=cache_config)
         valid_turn_size = prompt_size
+
+        # Log generation start with GPU memory
+        gpu_mem_gb = torch.cuda.memory_allocated() / 1024**3
+        logger.info(f"Starting generation: {turn_size} turns, GPU memory: {gpu_mem_gb:.2f}GB")
+
         for i in range(turn_size):
 
             # # set ratio: reach the reset cache ratio;
@@ -162,6 +172,14 @@ class SoulXPodcast(torch.nn.Module):
             mel = generated_mels[:, :, prompt_mels_lens[0].item():generated_mels_lens[0].item()]
             wav, _ = self.hift(speech_feat=mel)
             generated_wavs.append(wav)
+
+            # Log per-turn progress with GPU memory
+            turn_time = time.time() - start_time
+            gpu_mem_gb = torch.cuda.memory_allocated() / 1024**3
+            logger.info(f"Turn {i+1}/{turn_size} complete: {turn_time:.1f}s, GPU: {gpu_mem_gb:.2f}GB")
+
+        # Log generation complete
+        logger.info(f"Generation complete: {turn_size} turns, {len(generated_wavs)} audio segments")
 
         # Save the generated wav;
         results_dict['generated_wavs'] = generated_wavs
